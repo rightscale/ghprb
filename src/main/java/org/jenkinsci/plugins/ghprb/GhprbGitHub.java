@@ -14,6 +14,7 @@ import org.kohsuke.github.GitHub;
 public class GhprbGitHub {
 	private static final Logger logger = Logger.getLogger(GhprbGitHub.class.getName());
 	private GitHub gh;
+	private GitHub ghStatus;
 
 	private void connect() throws IOException{
 		String accessToken = GhprbTrigger.getDscp().getAccessToken();
@@ -30,10 +31,35 @@ public class GhprbGitHub {
 		}
 	}
 
+	private void connectStatus() throws IOException{
+		String statusAccessToken = GhprbTrigger.getDscp().getStatusAccessToken();
+		String serverAPIUrl = GhprbTrigger.getDscp().getServerAPIUrl();
+		try {
+			ghStatus = GitHub.connectUsingOAuth(serverAPIUrl, statusAccessToken);
+		} catch(IOException e) {
+			logger.log(Level.SEVERE, "Can''t connect to {0} using oauth", serverAPIUrl);
+			throw e;
+		}
+	}
+
 	public GitHub get() throws IOException{
 		if(gh == null){
 			connect();
 		}
+		return gh;
+	}
+
+	public GitHub getStatus() throws IOException{
+		String statusAccessToken = GhprbTrigger.getDscp().getStatusAccessToken();
+
+		if(statusAccessToken != null && !statusAccessToken.isEmpty()) {
+			if (ghStatus == null){
+				connectStatus();
+			}
+			return ghStatus;
+		}
+
+		get();
 		return gh;
 	}
 
