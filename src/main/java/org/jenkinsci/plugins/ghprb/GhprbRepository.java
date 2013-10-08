@@ -31,6 +31,7 @@ public class GhprbRepository {
 	private Map<Integer,GhprbPullRequest> pulls;
 
 	private GHRepository repo;
+        private GHRepository statusRepo;
 	private Ghprb ml;
 
 	public GhprbRepository(String user,
@@ -113,9 +114,17 @@ public class GhprbRepository {
 	}
 
 	public void createCommitStatus(String sha1, GHCommitState state, String url, String message, int id) {
+            		if(statusRepo == null){
+			try {
+				statusRepo = ml.getGitHub().getStatus().getRepository(reponame);
+			} catch (IOException ex) {
+				logger.log(Level.SEVERE, "Could not retrieve repo named " + reponame + " (Do you have properly set 'GitHub project' field in job configuration?)", ex);
+			}
+		}
+
 		logger.log(Level.INFO, "Setting status of {0} to {1} with url {2} and message: {3}", new Object[]{sha1, state, url, message});
 		try {
-			repo.createCommitStatus(sha1, state, url, message);
+			statusRepo.createCommitStatus(sha1, state, url, message);
 		} catch (IOException ex) {
 			if(GhprbTrigger.getDscp().getUseComments()){
 				logger.log(Level.INFO, "Could not update commit status of the Pull Request on GitHub. Trying to send comment.", ex);
