@@ -107,32 +107,36 @@ public class GhprbRepository {
 			pulls.remove(id);
 		}
 	}
+//        
+//        whatever calls this needs werite 
+//                Either that or the creds are being created how we expect
 
 	public void createCommitStatus(AbstractBuild<?,?> build, GHCommitState state, String message, int id){
 		String sha1 = build.getCause(GhprbCause.class).getCommit();
 		createCommitStatus(sha1, state, Jenkins.getInstance().getRootUrl() + build.getUrl(), message, id);
+                addComment(id, message);
 	}
 
 	public void createCommitStatus(String sha1, GHCommitState state, String url, String message, int id) {
-            		if(statusRepo == null){
-			try {
-				statusRepo = ml.getGitHub().getStatus().getRepository(reponame);
-			} catch (IOException ex) {
-				logger.log(Level.SEVERE, "Could not retrieve repo named " + reponame + " (Do you have properly set 'GitHub project' field in job configuration?)", ex);
-			}
-		}
+            if(statusRepo == null){
+                try {
+                    statusRepo = ml.getGitHub().getStatus().getRepository(reponame);
+                } catch (IOException ex) {
+                    logger.log(Level.SEVERE, "Could not retrieve repo named " + reponame + " (Do you have properly set 'GitHub project' field in job configuration?)", ex);
+                }
+            }
 
-		logger.log(Level.INFO, "Setting status of {0} to {1} with url {2} and message: {3}", new Object[]{sha1, state, url, message});
-		try {
-			statusRepo.createCommitStatus(sha1, state, url, message);
-		} catch (IOException ex) {
-			if(GhprbTrigger.getDscp().getUseComments()){
-				logger.log(Level.INFO, "Could not update commit status of the Pull Request on GitHub. Trying to send comment.", ex);
-				addComment(id, message);
-			}else{
-				logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
-			}
-		}
+            logger.log(Level.INFO, "Setting status of {0} to {1} with url {2} and message: {3}", new Object[]{sha1, state, url, message});
+            try {
+                statusRepo.createCommitStatus(sha1, state, url, message);
+            } catch (IOException ex) {
+                if(GhprbTrigger.getDscp().getUseComments()){
+                    logger.log(Level.INFO, "Could not update commit status of the Pull Request on GitHub. Trying to send comment.", ex);
+                    addComment(id, message);
+                }else{
+                    logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
+                }
+            }
 	}
 
 	public String getName() {
@@ -141,7 +145,7 @@ public class GhprbRepository {
 
 	public void addComment(int id, String comment) {
 		try {
-			repo.getPullRequest(id).comment(comment);
+			statusRepo.getPullRequest(id).comment(comment);
 		} catch (IOException ex) {
 			logger.log(Level.SEVERE, "Couldn't add comment to pull request #" + id + ": '" + comment + "'", ex);
 		}
