@@ -114,7 +114,6 @@ public class GhprbRepository {
 	public void createCommitStatus(AbstractBuild<?,?> build, GHCommitState state, String message, int id){
 		String sha1 = build.getCause(GhprbCause.class).getCommit();
 		createCommitStatus(sha1, state, Jenkins.getInstance().getRootUrl() + build.getUrl(), message, id);
-                addComment(id, message);
 	}
 
 	public void createCommitStatus(String sha1, GHCommitState state, String url, String message, int id) {
@@ -130,12 +129,9 @@ public class GhprbRepository {
             try {
                 statusRepo.createCommitStatus(sha1, state, url, message);
             } catch (IOException ex) {
-                if(GhprbTrigger.getDscp().getUseComments()){
-                    logger.log(Level.INFO, "Could not update commit status of the Pull Request on GitHub. Trying to send comment.", ex);
-                    addComment(id, message);
-                }else{
-                    logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
-                }
+                logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
+            } catch (Exception ex) {
+                logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
             }
 	}
 
@@ -145,7 +141,7 @@ public class GhprbRepository {
 
 	public void addComment(int id, String comment) {
 		try {
-			statusRepo.getPullRequest(id).comment(comment);
+			repo.getPullRequest(id).comment(comment);
 		} catch (IOException ex) {
 			logger.log(Level.SEVERE, "Couldn't add comment to pull request #" + id + ": '" + comment + "'", ex);
 		}
