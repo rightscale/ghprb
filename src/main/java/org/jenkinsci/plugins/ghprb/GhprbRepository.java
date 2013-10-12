@@ -1,8 +1,12 @@
 package org.jenkinsci.plugins.ghprb;
 
 import hudson.model.AbstractBuild;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.StringReader;
 import java.net.URL;
+import java.net.HttpURLConnection;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +16,7 @@ import java.util.HashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
+import org.apache.commons.httpclient.HttpClient;
 import org.kohsuke.github.GHCommitState;
 import org.kohsuke.github.GHEvent;
 import org.kohsuke.github.GHEventPayload.IssueComment;
@@ -116,22 +121,34 @@ public class GhprbRepository {
 		createCommitStatus(sha1, state, Jenkins.getInstance().getRootUrl() + build.getUrl(), message, id);
 	}
 
-	public void createCommitStatus(String sha1, GHCommitState state, String url, String message, int id) {
-            if(statusRepo == null){
-                try {
-                    statusRepo = ml.getGitHub().getStatus().getRepository(reponame);
-                } catch (IOException ex) {
-                    logger.log(Level.SEVERE, "Could not retrieve repo named " + reponame + " (Do you have properly set 'GitHub project' field in job configuration?)", ex);
-                }
-            }
-
-            logger.log(Level.INFO, "Setting status of {0} to {1} with url {2} and message: {3}", new Object[]{sha1, state, url, message});
+	public void createCommitStatus(String sha1, GHCommitState state, String url, String message, int id){
             try {
-                statusRepo.createCommitStatus(sha1, state, url, message);
+                String token = ml.getGitHub().getStatusToken();
+                String command = "https://api.github.com/repos/"+reponame+"/statuses/"+ sha1+"?access_token="+ token;
+                String args;
+//                if (url == null){
+                    args = "{'state':'"+state.name().toLowerCase()+"', 'description':'"+message+"'}";
+//                } else {
+//                    args = "\"{\\\"state\\\":\\\""+state.name().toLowerCase()+"\\\", \\\"target_url\\\":\\\""+url+"\\\", \\\"description\\\":\\\""+message+"\\\"}\"";
+//                }
+                
+                HttpURLConnection httpcon = (HttpURLConnection) ((new URL(command).openConnection()));
+                httpcon.setDoOutput(true);
+                httpcon.setRequestProperty("Content-Type", "application/json");
+                httpcon.setRequestProperty("Accept", "application/json");
+                httpcon.setRequestMethod("POST");
+                httpcon.connect();
+
+                byte[] outputBytes = args.getBytes("UTF-8");
+                OutputStream os = httpcon.getOutputStream();
+                os.write(outputBytes);
+
+                os.close();
+
             } catch (IOException ex) {
-                logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
+                Logger.getLogger(GhprbRepository.class.getName()).log(Level.SEVERE, null, ex);
             } catch (Exception ex) {
-                logger.log(Level.SEVERE, "Could not update commit status of the Pull Request on GitHub.", ex);
+                logger.log(Level.SEVERE, "Error", ex);
             }
 	}
 

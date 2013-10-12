@@ -41,6 +41,10 @@ public class GhprbGitHub {
 			throw e;
 		}
 	}
+        
+        public String getUrl() {
+            return GhprbTrigger.getDscp().getServerAPIUrl();
+        }
 
 	public GitHub get() throws IOException{
 		if(gh == null){
@@ -49,18 +53,8 @@ public class GhprbGitHub {
 		return gh;
 	}
 
-	public GitHub getStatus() throws IOException{
-		String statusAccessToken = GhprbTrigger.getDscp().getStatusAccessToken();
-
-		if(statusAccessToken != null && !statusAccessToken.isEmpty()) {
-			if (ghStatus == null){
-				connectStatus();
-			}
-			return ghStatus;
-		}
-
-		get();
-		return gh;
+	public String getStatusToken() {
+		return GhprbTrigger.getDscp().getStatusAccessToken();
 	}
 
 	public boolean isUserMemberOfOrganization(String organisation, String member){
