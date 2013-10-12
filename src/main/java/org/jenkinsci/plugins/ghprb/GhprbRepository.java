@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashMap;
+import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -127,7 +128,7 @@ public class GhprbRepository {
                 String command = "https://api.github.com/repos/"+reponame+"/statuses/"+ sha1+"?access_token="+ token;
                 String args;
 //                if (url == null){
-                    args = "{'state':'"+state.name().toLowerCase()+"', 'description':'"+message+"'}";
+                    args = "{\"state\":\""+state.name().toLowerCase()+"\", \"target_url\":\""+url+"\", \"description\":\""+message+"\"}";
 //                } else {
 //                    args = "\"{\\\"state\\\":\\\""+state.name().toLowerCase()+"\\\", \\\"target_url\\\":\\\""+url+"\\\", \\\"description\\\":\\\""+message+"\\\"}\"";
 //                }
@@ -144,6 +145,16 @@ public class GhprbRepository {
                 os.write(outputBytes);
 
                 os.close();
+                
+                Scanner s;
+                if (httpcon.getResponseCode() != 201) {
+                    s = new Scanner(httpcon.getErrorStream());
+                } else {
+                    s = new Scanner(httpcon.getInputStream());
+                }
+                s.useDelimiter("\\Z");
+                String response = s.next();
+                
 
             } catch (IOException ex) {
                 Logger.getLogger(GhprbRepository.class.getName()).log(Level.SEVERE, null, ex);

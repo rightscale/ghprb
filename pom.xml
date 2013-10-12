@@ -49,6 +49,12 @@
             <artifactId>github-api</artifactId>
             <version>1.42</version>
         </dependency>
+        <dependency>
+            <groupId>org.kohsuke</groupId>
+            <artifactId>github-api</artifactId>
+            <version>1.42</version>
+            <type>jar</type>
+        </dependency>
     </dependencies>
 
     <repositories>
