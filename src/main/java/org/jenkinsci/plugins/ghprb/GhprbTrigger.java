@@ -3,27 +3,21 @@ package org.jenkinsci.plugins.ghprb;
 import antlr.ANTLRException;
 import com.coravy.hudson.plugins.github.GithubProjectProperty;
 import hudson.Extension;
-import hudson.model.AbstractProject;
 import hudson.model.Item;
-import hudson.model.ParameterDefinition;
 import hudson.model.ParameterValue;
+import hudson.model.AbstractProject;
+import hudson.model.ParameterDefinition;
 import hudson.model.ParametersAction;
 import hudson.model.ParametersDefinitionProperty;
+import hudson.model.Run;
 import hudson.model.StringParameterValue;
 import hudson.model.queue.QueueTaskFuture;
+import hudson.plugins.git.RevisionParameterAction;
 import hudson.triggers.TimerTrigger;
+import hudson.plugins.git.util.BuildData;
 import hudson.triggers.Trigger;
 import hudson.triggers.TriggerDescriptor;
 import hudson.util.FormValidation;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.regex.Pattern;
-import javax.servlet.ServletException;
 import net.sf.json.JSONObject;
 import org.kohsuke.github.GHAuthorization;
 import org.kohsuke.github.GHCommitState;
@@ -32,11 +26,23 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 
+import javax.servlet.ServletException;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Pattern;
+
 /**
  * @author Honza Brázdil <jbrazdil@redhat.com>
  */
-public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
-	private static final Logger logger = Logger.getLogger(GhprbTrigger.class.getName());
+public class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
+
+    private static final Logger logger = Logger.getLogger(GhprbTrigger.class.getName());
+
 	private final String adminlist;
 	private       String whitelist;
 	private final String orgslist;
@@ -47,11 +53,18 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 	private final Boolean permitAll;
 	private Boolean autoCloseFailedPullRequests;
 
-	transient private Ghprb ml;
+    transient private Ghprb ml;
 
 	@DataBoundConstructor
-	public GhprbTrigger(String adminlist, String whitelist, String orgslist, String cron, String triggerPhrase,
-			Boolean onlyTriggerPhrase, Boolean useGitHubHooks, Boolean permitAll, Boolean autoCloseFailedPullRequests) throws ANTLRException{
+	public GhprbTrigger(String adminlist,
+                        String whitelist,
+                        String orgslist,
+                        String cron,
+                        String triggerPhrase,
+			            Boolean onlyTriggerPhrase,
+                        Boolean useGitHubHooks,
+                        Boolean permitAll,
+                        Boolean autoCloseFailedPullRequests) throws ANTLRException{
 		super(cron);
 		this.adminlist = adminlist;
 		this.whitelist = whitelist;
@@ -64,53 +77,84 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 		this.autoCloseFailedPullRequests = autoCloseFailedPullRequests;
 	}
 
-	@Override
-	public void start(AbstractProject<?, ?> project, boolean newInstance) {
-		if (project.getProperty(GithubProjectProperty.class) == null) {
-			logger.log(Level.INFO, "GitHub project not set up, cannot start trigger for job " + project.getName());
-			return;
-		}
-		try{
-			ml = Ghprb.getBuilder()
-			     .setProject(project)
-			     .setTrigger(this)
-			     .setPulls(DESCRIPTOR.getPullRequests(project.getFullName()))
-			     .build();
-		}catch(IllegalStateException ex){
-			logger.log(Level.SEVERE, "Can't start trigger", ex);
-			return;
-		}
+    @Override
+    public void start(AbstractProject<?, ?> project, boolean newInstance) {
+        if (project.getProperty(GithubProjectProperty.class) == null) {
+            logger.log(Level.INFO, "GitHub project not set up, cannot start trigger for job {0}", project.getName());
+            return;
+        }
+        try {
+            ml = createGhprb(project);
+        } catch (IllegalStateException ex) {
+            logger.log(Level.SEVERE, "Can't start trigger", ex);
+            return;
+        }
 
-		super.start(project, newInstance);
-	}
+        logger.log(Level.INFO, "Starting trigger");
+        super.start(project, newInstance);
+    }
 
-	public Ghprb getGhprb(){
+    public Ghprb createGhprb(AbstractProject<?, ?> project) {
+        return Ghprb.getBuilder()
+                .setProject(project)
+                .setTrigger(this)
+                .setPulls(DESCRIPTOR.getPullRequests(project.getFullName()))
+                .build();
+    }
+
+    public Ghprb getGhprb(){
 		return ml;
 	}
 
 	@Override
 	public void stop() {
-		if(ml != null){
-			ml.stop();
+		if(getGhprb() != null){
+            getGhprb().stop();
 			ml = null;
 		}
 		super.stop();
 	}
 
-	public QueueTaskFuture<?> startJob(GhprbCause cause){
+	public QueueTaskFuture<?> startJob(GhprbCause cause, GhprbRepository repo){
 		ArrayList<ParameterValue> values = getDefaultParameters();
-		if(cause.isMerged()){
-			values.add(new StringParameterValue("sha1","origin/pr/" + cause.getPullID() + "/merge"));
-		}else{
-			values.add(new StringParameterValue("sha1",cause.getCommit()));
-		}
+        final String commitSha = cause.isMerged() ? "origin/pr/" + cause.getPullID() + "/merge" : cause.getCommit();
+		values.add(new StringParameterValue("sha1", commitSha));
 		values.add(new StringParameterValue("ghprbActualCommit",cause.getCommit()));
-		values.add(new StringParameterValue("ghprbPullId",String.valueOf(cause.getPullID())));
+		final StringParameterValue pullIdPv = new StringParameterValue("ghprbPullId",String.valueOf(cause.getPullID()));
+		values.add(pullIdPv);
 		values.add(new StringParameterValue("ghprbTargetBranch",String.valueOf(cause.getTargetBranch())));
+		values.add(new StringParameterValue("ghprbSourceBranch",String.valueOf(cause.getSourceBranch())));
 		// it's possible the GHUser doesn't have an associated email address
 		values.add(new StringParameterValue("ghprbPullAuthorEmail",cause.getAuthorEmail() != null ? cause.getAuthorEmail() : ""));
 
-		return this.job.scheduleBuild2(0,cause,new ParametersAction(values));
+
+        String prUrl = cause.getUrl() != null ? cause.getUrl().toString() : String.valueOf(repo.getRepoUrl() + "/pull/" + cause.getPullID());
+		values.add(new StringParameterValue("ghprbPullLink", prUrl));
+
+		// add the previous pr BuildData as an action so that the correct change log is generated by the GitSCM plugin
+		// note that this will be removed from the Actions list after the job is completed so that the old (and incorrect)
+		// one isn't there
+		return this.job.scheduleBuild2(job.getQuietPeriod(),cause,new ParametersAction(values),findPreviousBuildForPullId(pullIdPv),new RevisionParameterAction(commitSha));
+	}
+
+	/**
+	 * Find the previous BuildData for the given pull request number; this may return null
+	 */
+	private BuildData findPreviousBuildForPullId(StringParameterValue pullIdPv) {
+		// find the previous build for this particular pull request, it may not be the last build
+		for (Run<?,?> r : job.getBuilds()) {
+			ParametersAction pa = r.getAction(ParametersAction.class);
+			if (pa != null) {
+				for (ParameterValue pv : pa.getParameters()) {
+					if (pv.equals(pullIdPv)) {
+						for (BuildData bd : r.getActions(BuildData.class)) {
+							return bd;
+						}
+					}
+				}
+			}
+		}
+		return null;
 	}
 
 	private ArrayList<ParameterValue> getDefaultParameters() {
@@ -126,14 +170,14 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 		return values;
 	}
 
-	@Override
-	public void run() {
-		if (ml == null) return;
-		ml.run();
-		DESCRIPTOR.save();
-	}
+    @Override
+    public void run() {
+        if (ml == null) return;
+        ml.run();
+        DESCRIPTOR.save();
+    }
 
-	public void addWhitelist(String author){
+    public void addWhitelist(String author){
 		whitelist = whitelist + " " + author;
 		try {
 			this.job.save();
@@ -227,6 +271,7 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 		private String retestPhrase = ".*test\\W+this\\W+please.*";
 		private String cron = "*/5 * * * *";
 		private Boolean useComments = false;
+		private int logExcerptLines = 0;
 		private String unstableAs = GHCommitState.FAILURE.name();
 		private Boolean autoCloseFailedPullRequests = false;
 		private String msgSuccess = "Test PASSed.";
@@ -269,6 +314,7 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 			retestPhrase = formData.getString("retestPhrase");
 			cron = formData.getString("cron");
 			useComments = formData.getBoolean("useComments");
+			logExcerptLines = formData.getInt("logExcerptLines");
 			unstableAs = formData.getString("unstableAs");
 			autoCloseFailedPullRequests = formData.getBoolean("autoCloseFailedPullRequests");
 			msgSuccess = formData.getString("msgSuccess");
@@ -283,7 +329,7 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 		public FormValidation doCheckAdminlist(@QueryParameter String value)
 				throws ServletException {
 			if(!adminlistPattern.matcher(value).matches()){
-				return FormValidation.error("GitHub username may only contain alphanumeric characters or dashes and cannot begin with a dash. Separate them with whitespece.");
+				return FormValidation.error("GitHub username may only contain alphanumeric characters or dashes and cannot begin with a dash. Separate them with whitespaces.");
 			}
 			return FormValidation.ok();
 		}
@@ -346,6 +392,10 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 			return useComments;
 		}
 
+		public int getlogExcerptLines() {
+			return logExcerptLines;
+		}
+
 		public Boolean getAutoCloseFailedPullRequests() {
 			return autoCloseFailedPullRequests;
 		}
@@ -406,4 +456,8 @@ public final class GhprbTrigger extends Trigger<AbstractProject<?, ?>> {
 			}
 		}
 	}
+
+    public void setMl(Ghprb ml) {
+        this.ml = ml;
+    }
 }
